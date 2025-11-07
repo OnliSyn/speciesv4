@@ -1,5 +1,8 @@
-# SPECIES Marketplace - Production Requirements Document v5.0
-## With MCP Server and AI Assistant Integration
+# SPECIES Marketplace - Production Requirements Document v6.0
+## With MCP Server, AI Assistant Integration, and Moralis Blockchain API
+
+**Primary Domain**: species.market  
+**Blockchain Verification**: Moralis Pro (Multi-chain)
 
 ---
 
@@ -7,10 +10,11 @@
 
 The SPECIES Marketplace is a prepaid, event-driven digital asset exchange operating as an Onli Cloud Appliance. This PRD incorporates all architectural recommendations and adds Model Context Protocol (MCP) server integration, enabling AI assistants to interact with the marketplace on behalf of users through secure, authenticated transactions.
 
-**Version**: 5.0 (With MCP Integration)  
+**Version**: 6.0 (With MCP and Moralis Integration)  
 **Status**: Ready for Implementation  
-**Timeline**: 8 weeks to production  
-**Key Addition**: MCP Server for AI assistant integration
+**Timeline**: 8 days (with AI agents)  
+**Key Additions**: MCP Server for AI assistants, Moralis for blockchain verification  
+**Domain**: species.market
 
 ---
 
@@ -66,6 +70,8 @@ AI Integration Layer:
 | Orchestration | Kubernetes/Docker Compose | Latest |
 | MCP Server | Model Context Protocol SDK | 0.5.0+ |
 | AI Integration | MCP + HMAC Auth | Latest |
+| Blockchain API | Moralis Pro | 2.0+ |
+| Multi-chain Support | ETH, BSC, TRON, Polygon | Latest |
 
 ---
 
@@ -85,7 +91,7 @@ AI Integration Layer:
 
 1. **Authenticator**: Security gate with dual-credential validation
 2. **Marketplace API**: Request ingestion with idempotency
-3. **Validator**: Payment proof verification (dual-path)
+3. **Validator**: Payment proof verification (Moralis + NOWPayments dual-path)
 4. **Classifier**: Intent routing
 5. **Matching Service**: Order resolution
 6. **Cashier**: Ledger management (Firefly)
@@ -198,7 +204,41 @@ type CacheConfig struct {
 }
 ```
 
-### 3.3 Connection Pooling
+### 3.3 Moralis Integration
+
+```typescript
+// Blockchain Verification Configuration
+interface MoralisConfig {
+    apiKey: string;
+    baseUrl: 'https://deep-index.moralis.io/api/v2';
+    rateLimit: 3500; // RPS on Pro plan
+    supportedChains: ['ETH', 'BSC', 'TRON', 'POLYGON'];
+}
+
+// Multi-chain Transaction Verification
+interface VerificationFlow {
+    primary: 'moralis';      // Blockchain truth
+    fallback: 'nowpayments';  // Payment processor
+    cache: 'upstash';        // 5-minute TTL
+    confirmations: {
+        ETH: 12,
+        BSC: 15,
+        TRON: 19,
+        POLYGON: 100
+    };
+}
+
+// Webhook Streams
+interface MoralisStreams {
+    usdtPayments: {
+        chains: ['0x1', '0x38', '0x89'];
+        contracts: ['USDT_ADDRESSES'];
+        webhook: 'https://api.species.market/webhooks/moralis';
+    };
+}
+```
+
+### 3.4 Connection Pooling
 
 ```go
 type PoolConfig struct {
@@ -615,36 +655,40 @@ targets:
 
 ---
 
-## 9. Implementation Timeline
+## 9. Implementation Timeline (AI Agent Execution)
 
-### Phase 1: Foundation (Weeks 1-2)
-- Set up development environment
+### Day 0-1: Foundation (12 hours)
+- Set up development environment with Fly.io
+- Deploy PostgreSQL and Redis on Upstash
+- Configure Moralis Pro account
 - Implement Authenticator with ProfileTray
 - Create Marketplace API with idempotency
-- Implement Validator with dual-path verification
+- Implement Validator with Moralis dual-path verification
 - Set up basic monitoring
 
-### Phase 2: Core Services (Weeks 3-4)
-- Implement Classifier
-- Create Matching Service
-- Implement Cashier with Firefly
+### Day 2-3: Core Services (16 hours)
+- Implement Classifier with declarative rules
+- Create Matching Service with order book
+- Implement Cashier with Firefly III
+- Setup Moralis webhook streams
 - Basic Reporter endpoints
-- Integration testing
+- Integration testing with all chains
 
-### Phase 3: Asset Operations (Weeks 5-6)
-- Implement Asset Manager
-- Create Floor Manager
-- Complete Reporter
-- **Implement MCP Server for AI integration**
-- End-to-end testing
+### Day 4-5: Asset Operations (16 hours)
+- Implement Asset Manager with Onli Cloud gRPC
+- Create Floor Manager for reconciliation
+- Complete Reporter with caching
+- **Implement MCP Server on Vercel**
+- End-to-end testing across all chains
 - Performance optimization
 
-### Phase 4: Production (Weeks 7-8)
-- Load testing including MCP endpoints
+### Day 6-8: Production (20 hours)
+- Load testing including MCP endpoints and Moralis
 - Security audit with MCP authentication review
 - Documentation including MCP usage guides
-- Deployment setup with MCP server
+- Deployment setup with MCP server on Vercel
 - AI assistant integration testing
+- Multi-chain verification testing
 - Launch preparation
 
 ---
@@ -718,6 +762,8 @@ Human-readable Interpretation
 - Zero custody incidents
 - **MCP response time: <1 second**
 - **MCP authentication success: >99.9%**
+- **Moralis API availability: >99.9%**
+- **Multi-chain verification success: >99.95%**
 
 ### Business KPIs
 - Daily active users: 1,000+
@@ -753,17 +799,21 @@ Human-readable Interpretation
 | MCP003 | MCP rate limit exceeded |
 
 ### C. References
-- Onli Cloud API Documentation
-- ProfileTray Integration Guide
+- Onli Cloud API Documentation (onlicloud.com)
+- ProfileTray Integration Guide (profiletray.com)
 - Firefly III Documentation
 - NOWPayments API Reference
-- TronScan API Documentation
+- Moralis API Documentation (docs.moralis.com)
 - Model Context Protocol Specification
 - MCP SDK Documentation
 
 ---
 
-**Document Version**: 5.0  
+**Document Version**: 6.0  
 **Last Updated**: November 2024  
-**Status**: Approved for Implementation with MCP Integration  
-**Key Addition**: Model Context Protocol (MCP) server for AI assistant integration
+**Status**: Approved for Implementation with MCP and Moralis Integration  
+**Key Additions**: 
+- Model Context Protocol (MCP) server for AI assistant integration
+- Moralis Pro for multi-chain blockchain verification
+- 8-day AI agent implementation timeline
+- Primary domain: species.market

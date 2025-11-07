@@ -1,5 +1,9 @@
-# SPECIES Marketplace - Build Specification
-## Technical Implementation Guide
+# SPECIES Marketplace - Build Specification v3.0
+## Technical Implementation Guide with Moralis Integration
+
+**Domain**: species.market  
+**Blockchain API**: Moralis Pro (Multi-chain)  
+**Infrastructure**: Fly.io + Vercel + Upstash
 
 ---
 
@@ -34,7 +38,8 @@ species-marketplace/
 │   ├── onlicloud/
 │   ├── profiletray/
 │   ├── nowpayments/
-│   └── blockchain/
+│   ├── moralis/        # Moralis blockchain API
+│   └── cache/
 ├── api/
 │   ├── proto/
 │   └── openapi/
@@ -369,6 +374,11 @@ import (
     "time"
 )
 
+const (
+    DefaultBaseURL = "https://api.profiletray.com"
+    Website        = "https://profiletray.com"
+)
+
 type Client interface {
     GetUserSecret(ctx context.Context, onliID string) (string, error)
     SyncUsers(ctx context.Context, page, pageSize int) ([]*User, error)
@@ -396,7 +406,145 @@ func NewProfileTrayClient(baseURL, apiKey, appKey string, cache CacheManager) *P
 }
 ```
 
-### 5.2 Onli Cloud Client
+### 5.2 Moralis Client
+
+```go
+// pkg/moralis/client.go
+package moralis
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "time"
+)
+
+const (
+    BaseURL = "https://deep-index.moralis.io/api/v2"
+    Documentation = "https://docs.moralis.com"
+    MaxRPS = 3500 // Pro plan rate limit
+)
+
+type Client struct {
+    apiKey     string
+    baseURL    string
+    httpClient *http.Client
+    cache      CacheManager
+}
+
+func NewClient(apiKey string, cache CacheManager) *Client {
+    return &Client{
+        apiKey:  apiKey,
+        baseURL: BaseURL,
+        httpClient: &http.Client{
+            Timeout: 30 * time.Second,
+        },
+        cache: cache,
+    }
+}
+
+// VerifyTransaction verifies a transaction across multiple chains
+func (c *Client) VerifyTransaction(ctx context.Context, hash string, chain string) (*TransactionResult, error) {
+    // Check cache first
+    cacheKey := fmt.Sprintf("moralis:tx:%s:%s", chain, hash)
+    if cached, ok := c.cache.Get(cacheKey); ok {
+        return cached.(*TransactionResult), nil
+    }
+    
+    var endpoint string
+    switch chain {
+    case "TRON":
+        endpoint = fmt.Sprintf("%s/tron/transaction/%s", c.baseURL, hash)
+    case "ETH":
+        endpoint = fmt.Sprintf("%s/transaction/%s?chain=0x1", c.baseURL, hash)
+    case "BSC":
+        endpoint = fmt.Sprintf("%s/transaction/%s?chain=0x38", c.baseURL, hash)
+    case "POLYGON":
+        endpoint = fmt.Sprintf("%s/transaction/%s?chain=0x89", c.baseURL, hash)
+    default:
+        return nil, fmt.Errorf("unsupported chain: %s", chain)
+    }
+    
+    req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+    if err != nil {
+        return nil, err
+    }
+    
+    req.Header.Set("X-API-Key", c.apiKey)
+    
+    resp, err := c.httpClient.Do(req)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+    
+    var result TransactionResult
+    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+        return nil, err
+    }
+    
+    // Cache successful result
+    c.cache.Set(cacheKey, &result, 5*time.Minute)
+    
+    return &result, nil
+}
+
+// SetupWebhookStream configures real-time transaction monitoring
+func (c *Client) SetupWebhookStream(ctx context.Context, config WebhookConfig) (*Stream, error) {
+    endpoint := fmt.Sprintf("%s/streams/evm", c.baseURL)
+    
+    reqBody, _ := json.Marshal(config)
+    req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(reqBody))
+    if err != nil {
+        return nil, err
+    }
+    
+    req.Header.Set("X-API-Key", c.apiKey)
+    req.Header.Set("Content-Type", "application/json")
+    
+    resp, err := c.httpClient.Do(req)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+    
+    var stream Stream
+    if err := json.NewDecoder(resp.Body).Decode(&stream); err != nil {
+        return nil, err
+    }
+    
+    return &stream, nil
+}
+
+type TransactionResult struct {
+    Hash         string    `json:"hash"`
+    From         string    `json:"from_address"`
+    To           string    `json:"to_address"`
+    Value        string    `json:"value"`
+    Confirmed    bool      `json:"confirmed"`
+    BlockNumber  string    `json:"block_number"`
+    BlockTime    time.Time `json:"block_timestamp"`
+}
+
+type WebhookConfig struct {
+    WebhookURL   string   `json:"webhookUrl"`
+    Description  string   `json:"description"`
+    Tag          string   `json:"tag"`
+    Chains       []string `json:"chainIds"`
+    Topic        []string `json:"topic0"`
+}
+
+type Stream struct {
+    ID          string `json:"id"`
+    WebhookURL  string `json:"webhookUrl"`
+    Description string `json:"description"`
+    Tag         string `json:"tag"`
+    Status      string `json:"status"`
+}
+```
+
+### 5.3 Onli Cloud Client
 
 ```go
 // pkg/onlicloud/client.go
@@ -405,6 +553,12 @@ package onlicloud
 import (
     "context"
     "google.golang.org/grpc"
+)
+
+const (
+    DefaultEndpoint = "grpc.onlicloud.com:50051"
+    Website        = "https://onlicloud.com"
+    Support        = "https://www.onli.support"
 )
 
 type Client interface {
@@ -483,7 +637,7 @@ import { ReceiptInterpreter } from '../../pkg/mcp/receipt/interpreter';
 
 async function main() {
   const config = {
-    marketplaceUrl: process.env.MARKETPLACE_URL || 'https://api.species.io',
+    marketplaceUrl: process.env.MARKETPLACE_URL || 'https://api.species.market',
     environment: process.env.ENVIRONMENT || 'production',
   };
   
@@ -1967,7 +2121,9 @@ The MCP Server is a lightweight signing proxy that enables AI assistants to help
 
 ---
 
-**Build Specification Version**: 2.0
-**MCP Integration**: Complete
-**Date**: November 2024
+**Build Specification Version**: 3.0  
+**MCP Integration**: Complete  
+**Blockchain API**: Moralis Pro (Multi-chain)  
+**Primary Domain**: species.market  
+**Date**: November 2024  
 **Status**: Production Ready
